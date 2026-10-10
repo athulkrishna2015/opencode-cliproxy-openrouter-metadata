@@ -1,54 +1,52 @@
-import { define } from "@opencode-ai/plugin/v2/promise"
+import type { Hooks, Plugin } from "@opencode-ai/plugin"
+import type { Model, Provider } from "@opencode-ai/sdk/v2"
 
 type Options = {
-  /** OpenRouter model IDs mapped to CLIProxyAPI model IDs. */
+  /** Map CLIProxyAPI model IDs to IDs in the OpenRouter provider catalog. */
   modelMap?: Record<string, string>
 }
 
-const validLimit = (n: unknown): n is number => Number.isSafeInteger(n) && (n as number) > 0
-const normalize = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "")
+const normalize = (value: string) => value.toLowerCase().replace(/[^a-z0-9]/g, "")
+const valid = (value: unknown): value is number => Number.isSafeInteger(value) && (value as number) > 0
 
-export const Plugin = define({
-  id: "cliproxy-openrouter-metadata",
-  setup: async (ctx) => {
-    const options = (ctx.options ?? {}) as Options
-    const aliases = options.modelMap ?? {}
-    await ctx.catalog.transform(async (catalog) => {
-      // Use the exact OpenCode provider/model catalog. That catalog is the source
-      // of truth; no guessed OpenRouter slugs or independently fetched metadata.
-      const openrouter = catalog.provider.get("openrouter")
-      if (!openrouter) {
-        console.warn("[cliproxy-openrouter-metadata] OpenCode catalog has no openrouter provider")
-        return
-      }
-      const truthByID = new Map<string, { context: number; output: number; name: string }>()
-      const truthByName = new Map<string, { context: number; output: number; name: string }>()
-      for (const [id, model] of openrouter.models) {
-        const context = model.limit?.context
-        const output = model.limit?.output
-        if (!validLimit(context)) continue
-        const truth = { context, output: validLimit(output) ? output : 0, name: model.name }
-        truthByID.set(id.toLowerCase(), truth)
-        truthByName.set(normalize(model.name), truth)
-      }
+const plugin: Plugin = async ({ client }, rawOptions): Promise<Hooks> => {
+  const options = (rawOptions ?? {}) as Options
+  const { data: providerResponse } = await client.provider.list()
+  const openrouter = providerResponse?.all.find((provider) => provider.id === "openrouter")
+  const openrouterModels = openrouter?.models ?? {}
+  const aliases = options.modelMap ?? {}
+  const truthByID = new Map<string, (typeof openrouterModels)[string]>()
+  const truthByName = new Map<string, (typeof openrouterModels)[string]>()
+  for (const [id, model] of Object.entries(openrouterModels)) {
+    if (!valid(model.limit.context)) continue
+    truthByID.set(id.toLowerCase(), model)
+    truthByName.set(normalize(model.name), model)
+  }
 
-      for (const provider of catalog.provider.list()) {
-        const providerID = provider.provider.id
-        if (providerID === "openrouter" || providerID !== "cliproxyapi") continue
-        for (const [modelID, proxyModel] of provider.models) {
-          const alias = aliases[`${providerID}/${modelID}`] ?? aliases[modelID]
-          const metadata = alias
-            ? truthByID.get(alias.toLowerCase())
-            : truthByName.get(normalize(proxyModel.name))
-          if (!metadata) continue
-          catalog.model.update(providerID, modelID, (model) => {
-            model.limit.context = metadata.context
-            if (metadata.output) model.limit.output = metadata.output
-          })
+  return ({
+  provider: {
+    id: "cliproxyapi",
+    models: async (provider: Provider, _ctx): Promise<Record<string, Model>> => {
+      const updates: Record<string, Model> = {}
+      for (const [id, proxyModel] of Object.entries(provider.models)) {
+        const mapped = aliases[id] ?? aliases[`cliproxyapi/${id}`]
+        const match = mapped
+          ? truthByID.get(mapped.toLowerCase())
+          : truthByName.get(normalize(proxyModel.name))
+        if (!match) continue
+        updates[id] = {
+          ...proxyModel,
+          limit: {
+            ...proxyModel.limit,
+            context: match.limit.context,
+            output: valid(match.limit.output) ? match.limit.output : proxyModel.limit.output,
+          },
         }
       }
-    })
+      return updates
+    },
   },
-})
+  })
+}
 
-export default Plugin
+export default { id: "cliproxy-openrouter-metadata", server: plugin }
