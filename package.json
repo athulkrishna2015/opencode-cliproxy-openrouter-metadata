@@ -1,0 +1,11 @@
+{
+  "name": "opencode-cliproxy-openrouter-metadata",
+  "version": "1.0.0",
+  "description": "Refresh CLIProxyAPI-backed OpenCode model limits from OpenRouter metadata",
+  "type": "module",
+  "main": "./src/index.ts",
+  "exports": { ".": "./src/index.ts" },
+  "dependencies": { "@opencode-ai/plugin": "^1.0.0" },
+  "devDependencies": { "typescript": "^5.8.0" },
+  "scripts": { "typecheck": "tsc --noEmit" }
+}
