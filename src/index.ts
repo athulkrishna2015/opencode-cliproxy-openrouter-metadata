@@ -1,5 +1,6 @@
-import type { Hooks, Plugin } from "@opencode-ai/plugin"
-import type { Model, Provider } from "@opencode-ai/sdk/v2"
+import { Plugin } from "@opencode/plugin"
+import type { Model } from "@opencode/schema/model"
+import type { ProviderRecord } from "@opencode/plugin/promise/provider"
 
 type Options = {
   /** Map CLIProxyAPI model IDs to IDs in the OpenRouter provider catalog. */
@@ -9,44 +10,41 @@ type Options = {
 const normalize = (value: string) => value.toLowerCase().replace(/[^a-z0-9]/g, "")
 const valid = (value: unknown): value is number => Number.isSafeInteger(value) && (value as number) > 0
 
-const plugin: Plugin = async ({ client }, rawOptions): Promise<Hooks> => {
-  const options = (rawOptions ?? {}) as Options
-  const { data: providerResponse } = await client.provider.list()
-  const openrouter = providerResponse?.all.find((provider) => provider.id === "openrouter")
-  const openrouterModels = openrouter?.models ?? {}
-  const aliases = options.modelMap ?? {}
-  const truthByID = new Map<string, (typeof openrouterModels)[string]>()
-  const truthByName = new Map<string, (typeof openrouterModels)[string]>()
-  for (const [id, model] of Object.entries(openrouterModels)) {
+function indexModels(record: ProviderRecord | undefined) {
+  const byID = new Map<string, Model.Info>()
+  const byName = new Map<string, Model.Info>()
+  for (const [id, model] of record?.models ?? []) {
     if (!valid(model.limit.context)) continue
-    truthByID.set(id.toLowerCase(), model)
-    truthByName.set(normalize(model.name), model)
+    byID.set(id.toLowerCase(), model)
+    byName.set(normalize(model.name), model)
   }
-
-  return ({
-  provider: {
-    id: "cliproxyapi",
-    models: async (provider: Provider, _ctx): Promise<Record<string, Model>> => {
-      const updates: Record<string, Model> = {}
-      for (const [id, proxyModel] of Object.entries(provider.models)) {
-        const mapped = aliases[id] ?? aliases[`cliproxyapi/${id}`]
-        const match = mapped
-          ? truthByID.get(mapped.toLowerCase())
-          : truthByName.get(normalize(proxyModel.name))
-        if (!match) continue
-        updates[id] = {
-          ...proxyModel,
-          limit: {
-            ...proxyModel.limit,
-            context: match.limit.context,
-            output: valid(match.limit.output) ? match.limit.output : proxyModel.limit.output,
-          },
-        }
-      }
-      return updates
-    },
-  },
-  })
+  return { byID, byName }
 }
 
-export default { id: "cliproxy-openrouter-metadata", server: plugin }
+const MetadataPlugin = Plugin.define({
+  id: "cliproxy-openrouter-metadata",
+  async setup(ctx) {
+    const options = ctx.options as Options
+    const aliases = options.modelMap ?? {}
+
+    await ctx.model.transform((editor) => {
+      const proxy = editor.provider.get("cliproxyapi")
+      const openrouter = editor.provider.get("openrouter")
+      if (!proxy || !openrouter) return
+
+      const { byID, byName } = indexModels(openrouter)
+      for (const [id, proxyModel] of proxy.models) {
+        const mapped = aliases[id] ?? aliases[`cliproxyapi/${id}`]
+        const match = mapped ? byID.get(mapped.toLowerCase()) : byName.get(normalize(proxyModel.name))
+        if (!match) continue
+
+        editor.update("cliproxyapi", id, (model) => {
+          model.limit.context = match.limit.context
+          if (valid(match.limit.output)) model.limit.output = match.limit.output
+        })
+      }
+    })
+  },
+})
+
+export default MetadataPlugin

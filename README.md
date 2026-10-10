@@ -6,16 +6,16 @@ An OpenCode plugin that corrects context/output limits on the `cliproxyapi` prov
 
 ## Install
 
-Install the package from npm (after publication) and add it to your OpenCode configuration:
+Add the plugin package to OpenCode V2's global or project `opencode.json` configuration:
 
 ```jsonc
 {
   "$schema": "https://opencode.ai/config.json",
-  "plugin": ["opencode-cliproxy-openrouter-metadata"]
+  "plugins": ["opencode-cliproxy-openrouter-metadata"]
 }
 ```
 
-For local development, place this repository in `~/.config/opencode/plugins/cliproxy-openrouter-metadata` and configure the plugin by its local package path/name according to your OpenCode version.
+For local development, add the absolute plugin directory to the V2 `plugins` array, for example `"/home/me/.config/opencode/plugins/cliproxy-openrouter-metadata"`. V2 plugin code uses `@opencode/plugin` and is not compatible with V1's plugin runtime.
 
 ## Options
 
@@ -23,15 +23,15 @@ The plugin uses the OpenRouter model ID when explicitly mapped; otherwise it mat
 
 ```jsonc
 {
-  "plugin": ["opencode-cliproxy-openrouter-metadata"],
-  "pluginConfig": {
-    "cliproxy-openrouter-metadata": {
+  "plugins": [{
+    "package": "opencode-cliproxy-openrouter-metadata",
+    "options": {
       "modelMap": {
         "gpt-6-luna": "openai/gpt-6-luna",
         "cliproxyapi/gpt-6-luna": "openai/gpt-6-luna"
       }
     }
-  }
+  }]
 }
 ```
 
