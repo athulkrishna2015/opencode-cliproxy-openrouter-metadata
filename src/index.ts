@@ -50,3 +50,5 @@ export const Plugin = define({
     })
   },
 })
+
+export default Plugin
