@@ -1,6 +1,6 @@
 # OpenCode CLIProxyAPI OpenRouter Metadata
 
-An OpenCode plugin that corrects stale context/output limits on CLIProxyAPI models using OpenRouter's public model catalog as the metadata source. For example, if OpenRouter lists a matched model with a 1M-token context, the OpenCode model picker and context accounting can use that value rather than a stale limit embedded in a proxy catalog.
+An OpenCode plugin that corrects context/output limits on the `cliproxyapi` provider using the actual `openrouter` provider and model catalog loaded by OpenCode. It does not guess model IDs or fetch a different catalog behind OpenCode's back.
 
 > This changes OpenCode's local model catalog only. It does not modify CLIProxyAPI, increase the upstream model's actual capability, or bypass upstream request limits. OpenRouter metadata is a source of truth for OpenRouter's representation, not necessarily every provider route behind a similarly named model.
 
@@ -19,31 +19,29 @@ For local development, place this repository in `~/.config/opencode/plugins/clip
 
 ## Options
 
-The plugin matches OpenRouter IDs directly to local model IDs by default. Aliases are useful when CLIProxyAPI exposes a short name such as `gpt-6-luna` but OpenRouter uses an organization-qualified identifier.
+The plugin uses the OpenRouter model ID when explicitly mapped; otherwise it matches the exact display name in OpenCode's OpenRouter and CLIProxyAPI catalogs. This means similarly named models share limits only when their catalog names agree.
 
 ```jsonc
 {
   "plugin": ["opencode-cliproxy-openrouter-metadata"],
   "pluginConfig": {
     "cliproxy-openrouter-metadata": {
-      "refreshMs": 3600000,
       "modelMap": {
         "gpt-6-luna": "openai/gpt-6-luna",
-        "custom-codex/gpt-6-luna": "openai/gpt-6-luna"
+        "cliproxyapi/gpt-6-luna": "openai/gpt-6-luna"
       }
     }
   }
 }
 ```
 
-- `refreshMs`: refresh interval (minimum 60 seconds; default one hour).
 - `modelMap`: map local model IDs (or `provider-id/model-id`) to OpenRouter IDs.
 
-Only providers whose ID or display name contains `CLIProxy` are touched. Only exact, case-insensitive OpenRouter ID matches (or explicit mappings) are applied; unmatched models and metadata remain unchanged. Fetch errors are logged and do not block OpenCode startup.
+Only provider ID `cliproxyapi` is touched. Values come from provider ID `openrouter` already present in OpenCode's catalog. Unmatched models and metadata remain unchanged. Updated values are applied whenever OpenCode rebuilds its catalog; no periodic timer is needed because the OpenCode provider/model list is the source of truth.
 
 ## Data source and refresh
 
-Uses `GET https://openrouter.ai/api/v1/models`. `context_length` sets OpenCode's `limit.context`; `top_provider.max_completion_tokens`, when present, sets `limit.output`. The list is cached in memory for the configured interval, so changes to OpenRouter's catalog are picked up automatically at the next refresh/catalog load.
+Uses OpenCode's `openrouter` provider model entries. The OpenRouter model's `limit.context` sets the matched CLIProxyAPI model's `limit.context`; its `limit.output` sets the matched output limit. This deliberately reflects the OpenRouter catalog presented to this OpenCode installation and does not assert that all upstream providers for a model have identical limits.
 
 ## Development
 
