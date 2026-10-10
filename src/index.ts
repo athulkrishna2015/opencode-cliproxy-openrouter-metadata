@@ -13,7 +13,7 @@ export const Plugin = define({
   setup: async (ctx) => {
     const options = (ctx.options ?? {}) as Options
     const aliases = options.modelMap ?? {}
-    await ctx.catalog.transform((catalog) => {
+    await ctx.catalog.transform(async (catalog) => {
       // Use the exact OpenCode provider/model catalog. That catalog is the source
       // of truth; no guessed OpenRouter slugs or independently fetched metadata.
       const openrouter = catalog.provider.get("openrouter")
